@@ -45,6 +45,39 @@ def test_extract_creator_info_raises_on_leftover_non_json():
 
 
 @pytest.mark.asyncio
+async def test_update_note_includes_user_id_when_anonymize_off(monkeypatch):
+    """Unpack of creator fields must not be commented out of the note dict."""
+    import config
+
+    monkeypatch.setattr(config, "ENABLE_ANONYMIZE_USER_INFO", False, raising=False)
+    captured = {}
+
+    class Store:
+        async def store_content(self, item):
+            captured.update(item)
+
+    monkeypatch.setattr("store.xhs.XhsStoreFactory.create_store", lambda: Store())
+    from store.xhs import update_xhs_note
+
+    await update_xhs_note({
+        "note_id": "n1",
+        "type": "normal",
+        "title": "t",
+        "desc": "d",
+        "time": 1,
+        "user": {"user_id": "u123", "nickname": "小红同学"},
+        "interact_info": {},
+        "image_list": [],
+        "tag_list": [],
+        "xsec_token": "tok",
+    })
+
+    assert captured["user_id"] == "u123"
+    assert captured["nickname"] == "小红同学"
+    assert captured["creator_hash"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("anonymize", [False, True])
 async def test_note_and_comment_identity_follows_anonymize_flag(monkeypatch, anonymize):
     import config
