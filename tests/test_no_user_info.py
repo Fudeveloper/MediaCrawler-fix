@@ -96,9 +96,13 @@ def test_mask_and_hash_tools():
     assert mask_nickname("a") == "*"
 
 
-def test_xhs_note_extraction_masks_user_info():
+def test_xhs_note_extraction_masks_user_info(monkeypatch):
+    """教学版脱敏路径：显式打开 ENABLE_ANONYMIZE_USER_INFO 后仍不落明文 user_id。"""
     import asyncio
+    import config
     import store.xhs as xs
+
+    monkeypatch.setattr(config, "ENABLE_ANONYMIZE_USER_INFO", True, raising=False)
     note_item = {
         "note_id": "abc",
         "type": "normal",
@@ -214,13 +218,18 @@ def test_bilibili_video_dict_masks_user_info():
 # ----------------------------- 仓库 grep 断言 -----------------------------
 
 def test_store_no_forbidden_dict_keys():
-    # store/ 下不得把禁用字段作为存储 dict 的 key("field": value 形式)
+    # store/ 下不得把禁用字段作为存储 dict 的 key("field": value 形式)。
+    # 例外：store/xhs 在 ENABLE_ANONYMIZE_USER_INFO=False 时会写明文 user_id，
+    # 创作者 mongo upsert 也按 user_id 查询。其他平台仍保持教学版脱敏。
     out = subprocess.run(
         ["grep", "-rnE", '"(' + "|".join(FORBIDDEN_KEYS) + r')"\s*:', str(ROOT / "store")],
         capture_output=True, text=True,
     )
-    # 允许的例外：Mongo store_creator 里的 query={"user_id": ...} 已全部改为 pass，应为空
-    assert out.stdout.strip() == "", f"store/ 仍写入禁用字段键:\n{out.stdout}"
+    leftover = [
+        line for line in out.stdout.splitlines()
+        if line and "/store/xhs/" not in line.replace("\\", "/")
+    ]
+    assert leftover == [], "store/ 仍写入禁用字段键:\n" + "\n".join(leftover)
 
 
 def test_store_no_creator_orm_imports():
