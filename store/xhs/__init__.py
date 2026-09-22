@@ -53,6 +53,24 @@ class XhsStoreFactory:
         return store_class()
 
 
+def _xhs_author_fields(user_id, nickname) -> Dict:
+    """Identity columns for a note or comment.
+
+    Default keeps plaintext user_id and nickname so notes can join creator fans.
+    creator_hash stays either way for older joins. ENABLE_ANONYMIZE_USER_INFO
+    restores teaching-edition hashing/masking and drops plaintext user_id.
+    """
+    fields = {
+        "creator_hash": anonymize_user_id(user_id),
+    }
+    if getattr(config, "ENABLE_ANONYMIZE_USER_INFO", False):
+        fields["nickname"] = mask_nickname(nickname)
+        return fields
+    fields["user_id"] = user_id
+    fields["nickname"] = nickname
+    return fields
+
+
 async def update_xhs_note(note_item: Dict):
     """
     Update Xiaohongshu note
@@ -82,8 +100,7 @@ async def update_xhs_note(note_item: Dict):
         "video_url": video_url,  # Note video url
         "time": note_item.get("time"),  # Note publish time
         "last_update_time": note_item.get("last_update_time", 0),  # Note last update time
-        "creator_hash": anonymize_user_id(user_info.get("user_id")),  # 创作者匿名哈希(不存原始 user_id)
-        "nickname": mask_nickname(user_info.get("nickname")),  # 用户昵称(已脱敏)
+        **_xhs_author_fields(user_info.get("user_id"), user_info.get("nickname")),
         "liked_count": interact_info.get("liked_count"),  # Like count
         "collected_count": interact_info.get("collected_count"),  # Collection count
         "comment_count": interact_info.get("comment_count"),  # Comment count
@@ -134,8 +151,7 @@ async def update_xhs_note_comment(note_id: str, comment_item: Dict):
         "create_time": comment_item.get("create_time"),  # Comment time
         "note_id": note_id,  # Note ID
         "content": comment_item.get("content"),  # Comment content
-        "creator_hash": anonymize_user_id(user_info.get("user_id")),  # 创作者匿名哈希(不存原始 user_id)
-        "nickname": mask_nickname(user_info.get("nickname")),  # 用户昵称(已脱敏)
+        **_xhs_author_fields(user_info.get("user_id"), user_info.get("nickname")),
         "sub_comment_count": comment_item.get("sub_comment_count", 0),  # Sub-comment count
         "pictures": ",".join(comment_pictures),  # Comment pictures
         "parent_comment_id": target_comment.get("id", ""),  # Parent comment ID

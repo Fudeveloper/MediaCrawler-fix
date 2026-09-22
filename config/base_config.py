@@ -117,6 +117,10 @@ ENABLE_GET_COMMENTS = True
 # Uses note.user.user_id; dedupes per run. Slightly slower due to extra profile requests.
 ENABLE_GET_CREATOR_INFO = True
 
+# False (default): Xiaohongshu notes/comments store plaintext user_id and nickname.
+# True restores teaching-edition hashing/masking and omits plaintext user_id.
+ENABLE_ANONYMIZE_USER_INFO = False
+
 # Control the number of crawled first-level comments (single video/post)
 CRAWLER_MAX_COMMENTS_COUNT_SINGLENOTES = 10
 
