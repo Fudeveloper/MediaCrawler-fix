@@ -58,12 +58,32 @@ class XiaoHongShuExtractor:
         Returns:
             Dict: User information dictionary
         """
-        match = re.search(
-            r"<script>window.__INITIAL_STATE__=(.+)<\/script>", html, re.M
+        # Align with note extractor: capture JS object and neutralize non-JSON tokens.
+        matches = re.findall(r"window.__INITIAL_STATE__=({.*})</script>", html, re.S)
+        if not matches:
+            # fallback: looser capture across newlines
+            m = re.search(r"window.__INITIAL_STATE__\s*=\s*(\{.*?})\s*</script>", html, re.S)
+            if not m:
+                return None
+            raw = m.group(1)
+        else:
+            raw = matches[0]
+
+        cleaned = (
+            raw.replace("undefined", "null")
+            .replace("NaN", "null")
+            .replace(":None", ":null")
         )
-        if match is None:
+        # Profile pages embed JS constructors (e.g. new Set([])) that are not JSON.
+        cleaned = re.sub(r"new Set\((.*?)\)", r"\1", cleaned)
+        cleaned = re.sub(r"new Map\((.*?)\)", r"\1", cleaned)
+        try:
+            info = json.loads(cleaned, strict=False)
+        except json.JSONDecodeError:
+            # last resort: quote leftover barewords is unsafe; try undefined already handled
+            raise
+
+        if not info:
             return None
-        info = json.loads(match.group(1).replace(":undefined", ":null"), strict=False)
-        if info is None:
-            return None
-        return info.get("user").get("userPageData")
+        user = info.get("user") or {}
+        return user.get("userPageData") or user.get("user_page_data")

@@ -113,6 +113,10 @@ ENABLE_GET_MEDIA = False
 # Whether to enable comment crawling mode. Comment crawling is enabled by default.
 ENABLE_GET_COMMENTS = True
 
+# Whether to fetch creator profile (fans/follows) while crawling notes in search/detail.
+# Uses note.user.user_id; dedupes per run. Slightly slower due to extra profile requests.
+ENABLE_GET_CREATOR_INFO = True
+
 # Control the number of crawled first-level comments (single video/post)
 CRAWLER_MAX_COMMENTS_COUNT_SINGLENOTES = 10
 

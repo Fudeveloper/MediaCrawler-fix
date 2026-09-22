@@ -69,6 +69,7 @@ class XiaoHongShuCrawler(AbstractCrawler):
         self.cdp_manager = None
         self.ip_proxy_pool = None  # Proxy IP pool for automatic proxy refresh
         self._media_downloader: Optional[MediaDownloader] = None
+        self._saved_creator_ids = set()  # dedupe creator profile fetches in one run
 
     async def start(self) -> None:
         playwright_proxy_format, httpx_proxy_format = None, None
@@ -179,6 +180,7 @@ class XiaoHongShuCrawler(AbstractCrawler):
                     for note_detail in note_details:
                         if note_detail:
                             await xhs_store.update_xhs_note(note_detail)
+                            await self.save_creator_from_note(note_detail)
                             await self.download_media(note_detail)
                             note_ids.append(note_detail.get("note_id"))
                             xsec_tokens.append(note_detail.get("xsec_token"))
@@ -256,6 +258,7 @@ class XiaoHongShuCrawler(AbstractCrawler):
         for note_detail in note_details:
             if note_detail:
                 await xhs_store.update_xhs_note(note_detail)
+                await self.save_creator_from_note(note_detail)
                 await self.download_media(note_detail)
 
     async def get_specified_notes(self):
@@ -283,8 +286,50 @@ class XiaoHongShuCrawler(AbstractCrawler):
                 need_get_comment_note_ids.append(note_detail.get("note_id", ""))
                 xsec_tokens.append(note_detail.get("xsec_token", ""))
                 await xhs_store.update_xhs_note(note_detail)
+                await self.save_creator_from_note(note_detail)
                 await self.download_media(note_detail)
         await self.batch_get_note_comments(need_get_comment_note_ids, xsec_tokens)
+
+    async def save_creator_from_note(self, note_detail: Dict) -> None:
+        """Fetch and persist creator fans/follows from a note detail payload."""
+        if not getattr(config, "ENABLE_GET_CREATOR_INFO", False):
+            return
+        if not note_detail:
+            return
+
+        user_info = note_detail.get("user") or {}
+        user_id = user_info.get("user_id")
+        if not user_id:
+            utils.logger.warning(
+                "[XiaoHongShuCrawler.save_creator_from_note] note missing user_id, skip creator fetch"
+            )
+            return
+        if user_id in self._saved_creator_ids:
+            return
+
+        xsec_token = user_info.get("xsec_token") or note_detail.get("xsec_token") or ""
+        xsec_source = note_detail.get("xsec_source") or "pc_search"
+        try:
+            creator_info: Dict = await self.xhs_client.get_creator_info(
+                user_id=user_id,
+                xsec_token=xsec_token,
+                xsec_source=xsec_source,
+            )
+            if creator_info:
+                await xhs_store.save_creator(user_id, creator=creator_info)
+                self._saved_creator_ids.add(user_id)
+                utils.logger.info(
+                    f"[XiaoHongShuCrawler.save_creator_from_note] saved creator {user_id}"
+                )
+            else:
+                utils.logger.warning(
+                    f"[XiaoHongShuCrawler.save_creator_from_note] empty creator info for {user_id}"
+                )
+            await asyncio.sleep(config.CRAWLER_MAX_SLEEP_SEC)
+        except Exception as ex:
+            utils.logger.error(
+                f"[XiaoHongShuCrawler.save_creator_from_note] failed for {user_id}: {ex}"
+            )
 
     async def get_note_detail_async_task(
         self,
