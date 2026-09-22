@@ -62,7 +62,7 @@ class XhsCsvStoreImplement(AbstractStore):
 
 
     async def store_creator(self, creator_item: Dict):
-        pass
+        await self.writer.write_to_csv(item_type="creators", item=creator_item)
 
     def flush(self):
         pass
@@ -90,7 +90,7 @@ class XhsJsonStoreImplement(AbstractStore):
         await self.writer.write_single_item_to_json(item_type="comments", item=comment_item)
 
     async def store_creator(self, creator_item: Dict):
-        pass
+        await self.writer.write_single_item_to_json(item_type="creators", item=creator_item)
 
     def flush(self):
         """
@@ -113,7 +113,7 @@ class XhsJsonlStoreImplement(AbstractStore):
         await self.writer.write_to_jsonl(item_type="comments", item=comment_item)
 
     async def store_creator(self, creator_item: Dict):
-        pass
+        await self.writer.write_to_jsonl(item_type="creators", item=creator_item)
 
     def flush(self):
         pass
@@ -227,8 +227,15 @@ class XhsDbStoreImplement(AbstractStore):
         return result.first() is not None
 
     async def store_creator(self, creator_item: Dict):
-        # 教学版：创作者个人资料不再落库
-        pass
+        """
+        Teaching edition removed XhsCreator ORM table.
+        Persist creators via jsonl under data/xhs so fan counts are still available.
+        """
+        writer = AsyncFileWriter(platform="xhs", crawler_type=crawler_type_var.get() or "creator")
+        await writer.write_to_jsonl(item_type="creators", item=creator_item)
+        utils.logger.info(
+            f"[XhsDbStoreImplement.store_creator] Saved creator {creator_item.get('user_id')} via jsonl fallback"
+        )
 
     async def get_all_content(self) -> List[Dict]:
         async with get_session() as session:
@@ -295,8 +302,16 @@ class XhsMongoStoreImplement(AbstractStore):
         Args:
             creator_item: Creator data
         """
-        # 教学版：创作者个人资料不再落库
-        pass
+        user_id = creator_item.get("user_id")
+        if not user_id:
+            return
+
+        await self.mongo_store.save_or_update(
+            collection_suffix="creators",
+            query={"user_id": user_id},
+            data=creator_item
+        )
+        utils.logger.info(f"[XhsMongoStoreImplement.store_creator] Saved creator {user_id} to MongoDB")
 
 
 class XhsExcelStoreImplement:

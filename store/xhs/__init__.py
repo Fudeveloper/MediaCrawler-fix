@@ -21,12 +21,14 @@
 # @Author  : relakkes@gmail.com
 # @Time    : 2024/1/14 17:34
 # @Desc    :
-from typing import List
+import json
+from typing import Dict, List
 
 import config
 from media_platform.xhs.media import extract_video_urls
 from var import source_keyword_var
 from tools.user_hash import anonymize_user_id, mask_nickname
+from tools import utils
 
 from ._store_impl import *
 
@@ -146,13 +148,47 @@ async def update_xhs_note_comment(note_id: str, comment_item: Dict):
 
 async def save_creator(user_id: str, creator: Dict):
     """
-    Save Xiaohongshu creator
-    Args:
-        user_id:
-        creator:
-
-    Returns:
-
+    Save Xiaohongshu creator profile (including fans/follows).
+    Restored from teaching-edition no-op so creator crawls can persist fan counts.
     """
-    # 教学版：创作者个人资料(昵称/性别/头像/IP/粉丝数等)不再落库，防骚扰。
-    return
+    if not creator:
+        utils.logger.warning(f"[store.xhs.save_creator] empty creator for user_id={user_id}")
+        return
+
+    user_info = creator.get('basicInfo', {}) or {}
+
+    follows = 0
+    fans = 0
+    interaction = 0
+    for i in creator.get('interactions') or []:
+        t = i.get('type')
+        if t == 'follows':
+            follows = i.get('count') or 0
+        elif t == 'fans':
+            fans = i.get('count') or 0
+        elif t == 'interaction':
+            interaction = i.get('count') or 0
+
+    def get_gender(gender):
+        if gender == 1:
+            return 'Female'
+        elif gender == 0:
+            return 'Male'
+        return None
+
+    tags = creator.get('tags') or []
+    local_db_item = {
+        'user_id': user_id,
+        'nickname': user_info.get('nickname'),
+        'gender': get_gender(user_info.get('gender')),
+        'avatar': user_info.get('images'),
+        'desc': user_info.get('desc'),
+        'ip_location': user_info.get('ipLocation'),
+        'follows': follows,
+        'fans': fans,
+        'interaction': interaction,
+        'tag_list': json.dumps({tag.get('tagType'): tag.get('name') for tag in tags}, ensure_ascii=False),
+        'last_modify_ts': utils.get_current_timestamp(),
+    }
+    utils.logger.info(f"[store.xhs.save_creator] creator:{local_db_item}")
+    await XhsStoreFactory.create_store().store_creator(local_db_item)
